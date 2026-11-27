@@ -21,7 +21,12 @@ class Config:
     DATA_KEY = os.getenv("DATA_KEY") or None
     SQLALCHEMY_DATABASE_URI = _db_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")]
+    # The live site origins are in the default, so a missing CORS_ORIGINS
+    # value never locks the live site out. A value set in the Render
+    # dashboard still wins, so keep it in sync there too.
+    CORS_ORIGINS = [o.strip() for o in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,https://portagov.giin.co.rw,https://portagov-frontend.vercel.app").split(",")]
     UPLOAD_DIR = os.getenv(
         "UPLOAD_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads"))
     MAX_CONTENT_LENGTH = 8 * 1024 * 1024
