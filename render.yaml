@@ -24,7 +24,19 @@ services:
       - key: CORS_ORIGINS
         sync: false   # the Vercel frontend URL, e.g. https://portagov.giin.co.rw
       - key: EXPOSE_OTP
-        value: "True" # demo only: no SMS gateway yet. Set False here once SMS is wired.
+        value: "True" # demo only: codes are still shown on screen. Set False once every
+        # account that signs in has an email or a working SMS route; the admin
+        # account currently has no email, so flipping it now would lock him out.
+      - key: SMTP_HOST
+        sync: false   # mail server from the ServerByt panel, e.g. mail.giin.co.rw
+      - key: SMTP_PORT
+        sync: false   # 465 for SSL, 587 for STARTTLS
+      - key: SMTP_USER
+        sync: false   # noreply@portagov.giin.co.rw
+      - key: SMTP_PASS
+        sync: false   # the mailbox password, set in the Render dashboard only
+      - key: MAIL_FROM
+        sync: false   # noreply@portagov.giin.co.rw
       - key: DEMO_MODE
         value: "False" # public demo accounts are disabled; the platform's own super admin is in place.
       - key: TASKS_SECRET
