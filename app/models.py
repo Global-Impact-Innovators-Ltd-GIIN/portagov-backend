@@ -371,6 +371,55 @@ class Message(db.Model):
                 "created_at": self.created_at.isoformat()}
 
 
+class HelpTicket(db.Model):
+    """One help desk ticket: a citizen question the assistant could not answer, or a
+    question asked on the Help page. The question is stored the moment it is asked,
+    so it is never lost when the assistant is down. Linked to the citizen's
+    application and tracking number when there is one, so every reply stays on
+    that same application."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))  # None for a guest
+    name = db.Column(db.String(150), nullable=False)
+    phone = db.Column(db.String(30), nullable=False, index=True)
+    topic = db.Column(db.String(80), nullable=False)  # the queue: Help desk, a team, an institution
+    message = db.Column(db.Text, nullable=False)
+    application_id = db.Column(db.Integer, db.ForeignKey("application.id"))
+    reference = db.Column(db.String(30))  # tracking number of the linked application, if any
+    source = db.Column(db.String(20), default="help_page")  # assistant | help_page | callback
+    status = db.Column(db.String(20), default="New")  # New | In progress | Answered
+    assigned_to = db.Column(db.String(150), default="")  # staff display name
+    reply = db.Column(db.Text, default="")  # latest staff reply, kept for the citizen view
+    answered_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=now)
+    updated_at = db.Column(db.DateTime, default=now, onupdate=now)
+    replies = db.relationship("HelpTicketReply", backref="ticket",
+                              order_by="HelpTicketReply.id", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {"id": self.id, "name": self.name, "phone": self.phone, "topic": self.topic,
+                "message": self.message, "status": self.status, "reply": self.reply or "",
+                "assigned_to": self.assigned_to or "",
+                "answered_at": self.answered_at.isoformat() if self.answered_at else "",
+                "created_at": self.created_at.isoformat(),
+                "application_id": self.application_id, "reference": self.reference,
+                "user_id": self.user_id, "source": self.source,
+                "replies": [r.to_dict() for r in self.replies]}
+
+
+class HelpTicketReply(db.Model):
+    """One reply on a ticket, from the citizen or from staff."""
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("help_ticket.id"), nullable=False, index=True)
+    sender = db.Column(db.String(20), nullable=False)  # citizen | staff
+    sender_name = db.Column(db.String(150))
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=now)
+
+    def to_dict(self):
+        return {"id": self.id, "sender": self.sender, "sender_name": self.sender_name,
+                "body": self.body, "created_at": self.created_at.isoformat()}
+
+
 class AccessLog(db.Model):
     """Who on the government side opened a citizen's application - shown to the citizen."""
     id = db.Column(db.Integer, primary_key=True)

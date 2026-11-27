@@ -84,15 +84,26 @@ def assistant():
     for s in Service.query.filter_by(active=True):
         hay_name = s.name.lower()
         hay = f"{hay_name} {s.category.lower()} {s.description.lower()} {s.institution.name.lower()}"
-        score = sum(3 if w in hay_name else 1 for w in words if w in hay or w.rstrip("s") in hay)
+
+        def _hit(w):
+            if w in hay:
+                return True
+            # plural form: only when the singular is still a real word (4+ letters),
+            # so a short word like "mars" does not match "marriage" through "mar"
+            stem = w[:-1] if w.endswith("s") else w
+            return len(stem) >= 4 and stem in hay
+
+        score = sum(3 if w in hay_name else 1 for w in words if _hit(w))
         if score:
             scored.append((score, s))
     scored.sort(key=lambda x: -x[0])
     top = [s for _, s in scored[:3]]
     parts = []
+    topic_matched = False
     for keys, text in TOPICS:
         if any(k in q for k in keys):
             parts.append(text)
+            topic_matched = True
             break
     if top:
         s = top[0]
@@ -106,5 +117,9 @@ def assistant():
     if not parts:
         parts.append("I could not match that to a service. Try the name of what you need, such as "
                      "'passport', 'driver license', 'business registration' or 'birth certificate'.")
+    # matched tells the frontend whether this question was answered: when nothing
+    # matched, the assistant must hand the question to the help desk as a ticket
+    # instead of leaving the citizen with a dead end.
     return jsonify({"answer": " ".join(parts),
-                    "services": [{"code": s.code, "name": s.name} for s in top]})
+                    "services": [{"code": s.code, "name": s.name} for s in top],
+                    "matched": bool(top) or topic_matched})
