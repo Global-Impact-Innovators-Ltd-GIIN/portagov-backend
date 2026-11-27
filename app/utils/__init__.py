@@ -9,7 +9,7 @@ import jwt
 from flask import current_app, g, jsonify, request
 
 from ..extensions import db
-from ..models import AccessLog, AuditLog, Notification, User
+from ..models import AccessLog, AuditLog, Notification, SystemSetting, User
 
 
 def err(message, code=400):
@@ -122,6 +122,21 @@ def notify(user_id, title, body, channel="app"):
 
 def gen_otp():
     return f"{secrets.randbelow(10**6):06d}"
+
+
+def get_setting(key, default=None):
+    """A platform setting stored in the database (SystemSetting), or the default when unset."""
+    row = db.session.get(SystemSetting, key)
+    return row.value if row is not None else default
+
+
+def set_setting(key, value):
+    """Store a platform setting. The caller commits."""
+    row = db.session.get(SystemSetting, key)
+    if row is None:
+        db.session.add(SystemSetting(key=key, value=value))
+    else:
+        row.value = value
 
 
 def gen_reference(prefix="LR"):

@@ -258,7 +258,7 @@ def admin_update_service(code):
 
 # ---------------- USSD (feature phones) ----------------
 MENU = "Welcome to eLiberia\n1. Track application\n2. My applications\n3. Check a service fee\n4. Verify certificate"
-LABEL = {"draft": "Not yet submitted", "submitted": "Received", "in_review": "Being reviewed",
+LABEL = {"draft": "Not yet submitted", "held": "Received - awaiting release", "submitted": "Received", "in_review": "Being reviewed",
          "info_requested": "More information needed", "biometric_pending": "Identity check needed",
          "approved": "Approved", "rejected": "Rejected", "ready_for_collection": "Ready for collection",
          "completed": "Completed"}

@@ -10,7 +10,8 @@ from ..models import (Appointment, Application, ApplicationEvent, BiometricRecor
                       Payment, Service, now)
 from ..rules import check_file, normalize_doc_rules
 from ..services import biometrics, forms, payments, storage, vault
-from ..utils import audit, auth_required, err, gen_bill_id, gen_reference, notify, rate_limit, record_access
+from ..utils import (audit, auth_required, err, gen_bill_id, gen_reference, get_setting, notify, rate_limit,
+                     record_access)
 from .catalog import CENTERS
 
 bp = Blueprint("applications", __name__, url_prefix="/api/applications")
@@ -26,14 +27,15 @@ def _log(app_, status, message, actor=None):
 
 def _own(app_id):
     """The application, if the signed-in user may see it: its citizen, the agent who assisted,
-    an officer of the owning institution, or an admin."""
+    an officer of the owning institution (only once the platform has released it), or an admin."""
     a = db.session.get(Application, app_id)
     if not a:
         return None
     u = g.user
     allowed = ((u.role == "citizen" and a.user_id == u.id)
                or (u.role == "agent" and a.agent_id == u.id)
-               or (u.role in ("officer", "inst_admin") and a.service.institution_id == u.institution_id)
+               or (u.role in ("officer", "inst_admin") and a.service.institution_id == u.institution_id
+                   and a.status != "held")
                or u.role == "admin")
     return a if allowed else None
 
@@ -210,8 +212,16 @@ def submit(app_id):
     if a.fee_usd > 0 and not a.paid:
         return err("Payment is required before submitting", 402)
     a.due_at = now() + timedelta(days=a.service.sla_days)
-    _log(a, "submitted", "Application submitted")
-    notify(a.user_id, "Application submitted", f"{a.reference} was received by {a.service.institution.name}.")
+    if get_setting("release_mode", "manual") == "manual":
+        # Platform first: the application is held here until the platform releases it to the
+        # institution. No officer can see it while held.
+        _log(a, "held", "Application submitted - held by the platform for release to "
+                        + a.service.institution.name)
+        notify(a.user_id, "Application received",
+               f"{a.reference} was received and is awaiting release to {a.service.institution.name}.")
+    else:
+        _log(a, "submitted", "Application submitted")
+        notify(a.user_id, "Application submitted", f"{a.reference} was received by {a.service.institution.name}.")
     audit("application_submit", a.reference)
     db.session.commit()
     return jsonify(a.to_dict(full=True))
@@ -324,6 +334,10 @@ def book(app_id):
     purpose = d.get("purpose", "biometrics")
     ap = Appointment(application_id=a.id, user_id=a.user_id, center=d["center"], slot=slot, purpose=purpose)
     db.session.add(ap)
+    # The timeline is built from events: record the booking there (the application status itself
+    # does not change - a draft stays a draft, a submitted application stays submitted).
+    db.session.add(ApplicationEvent(application=a, status=a.status, actor=g.user.full_name,
+                                    message=f"Appointment set: {d['center']} on {slot:%d %b %Y %H:%M}"))
     notify(a.user_id, "Appointment booked", f"{d['center']} on {slot:%d %b %Y %H:%M}")
     audit("appointment_book", a.reference)
     db.session.commit()

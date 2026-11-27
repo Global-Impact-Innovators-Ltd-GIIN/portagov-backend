@@ -7,8 +7,8 @@ from ..models import (Appointment, Application, ApplicationEvent, AuditLog, Biom
                       Notification, Service, User, now)
 from ..rules import normalize_workflow
 from ..services import biometrics, certificates
-from ..utils import (ADMIN_PERMS, audit, auth_required, err, has_perm, need, normalize_phone, notify,
-                     password_problem, record_access)
+from ..utils import (ADMIN_PERMS, audit, auth_required, err, get_setting, has_perm, need, normalize_phone, notify,
+                     password_problem, record_access, set_setting)
 
 bp = Blueprint("staff", __name__, url_prefix="/api")
 
@@ -41,7 +41,11 @@ def _stage_gate(stage, index, actors):
 
 
 def _get(app_id):
-    return _scope(Application.query).filter(Application.id == app_id).first()
+    """A released application in scope. Held applications never reach staff this way, not even
+    through the platform admin's staff view - the platform inspects those through the admin
+    release endpoints below."""
+    return _scope(Application.query).filter(Application.id == app_id,
+                                            Application.status != "held").first()
 
 
 # ---- notifications (any user) ----
@@ -73,6 +77,9 @@ def queue():
         q = q.filter(Application.status == request.args["status"])
     else:
         q = q.filter(Application.status != "draft")
+    # Platform first: only released applications reach the review queue. Held applications are
+    # invisible to officers here, whatever status filter is asked for.
+    q = q.filter(Application.status != "held")
     return jsonify([a.to_dict() for a in q.order_by(Application.due_at).limit(200)])
 
 
@@ -190,6 +197,9 @@ def attend(ap_id):
 @auth_required(*REVIEWERS)
 def stats():
     base = _scope(Application.query)
+    if g.user.role in INSTITUTION_ROLES:
+        # Institution staff must not even learn how many applications are held for them.
+        base = base.filter(Application.status != "held")
     by_status = dict(base.with_entities(Application.status, func.count(Application.id))
                      .group_by(Application.status).all())
     overdue = base.filter(Application.due_at < now(),
@@ -216,6 +226,117 @@ def stats():
 @auth_required("admin")
 def audit_log():
     return need("audit") or jsonify([x.to_dict() for x in AuditLog.query.order_by(AuditLog.id.desc()).limit(200)])
+
+
+# ---- platform release gate ----
+# Platform first: citizen information comes to the platform, the platform holds it and checks
+# payment, and only the platform releases it to the institution. These endpoints and the
+# release_mode setting are the ONLY path an application takes from held to released.
+RELEASE_MODES = ("automatic", "manual")
+
+
+def _release_mode():
+    return get_setting("release_mode", "manual")
+
+
+@bp.get("/admin/settings")
+@auth_required("admin")
+def admin_settings():
+    """Platform settings. Today this is only the release mode: 'manual' holds every submitted
+    application for platform release, 'automatic' releases it on payment confirmation."""
+    gate = need("support")
+    if gate:
+        return gate
+    return jsonify({"release_mode": _release_mode()})
+
+
+@bp.post("/admin/settings")
+@auth_required("admin")
+def admin_update_settings():
+    gate = need("support")
+    if gate:
+        return gate
+    d = request.get_json(silent=True) or {}
+    mode = str(d.get("release_mode") or "").strip().lower()
+    if mode not in RELEASE_MODES:
+        return err("release_mode must be 'automatic' or 'manual'")
+    set_setting("release_mode", mode)
+    audit("release_mode_change", mode)
+    db.session.commit()
+    return jsonify({"release_mode": mode})
+
+
+@bp.get("/admin/applications/held")
+@auth_required("admin")
+def held_queue():
+    """Applications the platform is holding: submitted and paid, not yet released to any institution."""
+    gate = need("support")
+    if gate:
+        return gate
+    items = Application.query.filter_by(status="held").order_by(Application.due_at).all()
+    return jsonify([a.to_dict() for a in items])
+
+
+@bp.get("/admin/applications/<int:app_id>")
+@auth_required("admin")
+def admin_detail(app_id):
+    """Platform inspection of any application, including held ones (staff endpoints never show held)."""
+    gate = need("support")
+    if gate:
+        return gate
+    a = db.session.get(Application, app_id)
+    if not a:
+        return err("Application not found", 404)
+    record_access(a, "Opened the application (platform review)")
+    db.session.commit()
+    return jsonify(a.to_dict(full=True))
+
+
+@bp.post("/admin/applications/<int:app_id>/release")
+@auth_required("admin")
+def release_application(app_id):
+    """Release a held application to its institution. After this, and only after this, the
+    institution's officers can see it and work on it."""
+    gate = need("support")
+    if gate:
+        return gate
+    a = db.session.get(Application, app_id)
+    if not a:
+        return err("Application not found", 404)
+    if a.status != "held":
+        return err(f"Only a held application can be released (status is '{a.status}')", 409)
+    a.status = "submitted"
+    db.session.add(ApplicationEvent(application=a, status="submitted", actor=g.user.full_name,
+                                    message=f"Released to {a.service.institution.name} for review"))
+    notify(a.user_id, "Application released",
+           f"{a.reference} was sent to {a.service.institution.name} for review.")
+    audit("application_release", a.reference)
+    db.session.commit()
+    return jsonify(a.to_dict(full=True))
+
+
+@bp.post("/admin/applications/<int:app_id>/recall")
+@auth_required("admin")
+def recall_application(app_id):
+    """Pull a released-but-not-yet-reviewed application back to held, so the platform can
+    hold it again until it is released a second time."""
+    gate = need("support")
+    if gate:
+        return gate
+    a = db.session.get(Application, app_id)
+    if not a:
+        return err("Application not found", 404)
+    if a.status != "submitted":
+        return err(f"Only a submitted application can be recalled (status is '{a.status}')", 409)
+    a.status = "held"
+    db.session.add(ApplicationEvent(application=a, status="held", actor=g.user.full_name,
+                                    message="Recalled from " + a.service.institution.name
+                                            + " - held by the platform for release"))
+    notify(a.user_id, "Application held for a further check",
+           f"{a.reference} was recalled for a further check before review.")
+    audit("application_recall", a.reference)
+    db.session.commit()
+    return jsonify(a.to_dict(full=True))
 
 
 # ---- platform team ----

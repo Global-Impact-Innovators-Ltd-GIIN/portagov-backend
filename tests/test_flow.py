@@ -9,6 +9,13 @@ from app import create_app
 def client(tmp_path):
     app = create_app({"SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path}/t.db", "TESTING": True,
                       "UPLOAD_DIR": str(tmp_path / "up"), "EXPOSE_OTP": True})
+    # Shared fixture tests the flow after release, so it runs in automatic mode. The manual
+    # hold, the release and the recall are covered by their own tests below.
+    with app.app_context():
+        from app.extensions import db
+        from app.utils import set_setting
+        set_setting("release_mode", "automatic")
+        db.session.commit()
     return app.test_client()
 
 
@@ -763,3 +770,117 @@ def test_appointment_slots_reschedule_cancel_and_delivery(client):
     assert r["delivery"]["method"] == "courier" and r["delivery"]["phone"] == "+231770600050"
     assert client.put(f"/api/applications/{aid}/delivery", headers=hdr(tok),
                       json={"method": "collect", "center": center}).get_json()["delivery"]["center"] == center
+
+
+# ============================ platform release gate ============================
+def _submit_free(client, tok, service="TIN_REG"):
+    """A filled-in, submitted application for a free service. Returns the application dict."""
+    a = client.post("/api/applications", headers=hdr(tok), json={"service_code": service}).get_json()
+    client.put(f"/api/applications/{a['id']}", headers=hdr(tok),
+               json={"data": {"full_name": "Ma Test", "nin": "LR12345678"}})
+    upload_all(client, tok, a["id"])
+    r = client.post(f"/api/applications/{a['id']}/submit", headers=hdr(tok))
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()
+
+
+def _submit_paid(client, tok):
+    """A filled-in, paid, submitted National ID application (NIR, the demo officer's institution)."""
+    a = client.post("/api/applications", headers=hdr(tok), json={"service_code": "NATIONAL_ID_NEW"}).get_json()
+    client.put(f"/api/applications/{a['id']}", headers=hdr(tok), json={"data": {
+        "full_name": "Ma Test", "dob": "1990-01-01", "place_of_birth": "Monrovia",
+        "county": "Montserrado", "mother_name": "Mama"}})
+    upload_all(client, tok, a["id"])
+    p = client.post(f"/api/applications/{a['id']}/pay", headers=hdr(tok),
+                    json={"method": "orange_money"}).get_json()
+    assert client.post(f"/api/applications/payments/{p['txn_ref']}/confirm", headers=hdr(tok),
+                       json={}).get_json()["status"] == "success"
+    r = client.post(f"/api/applications/{a['id']}/submit", headers=hdr(tok))
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()
+
+
+def test_release_gate_holds_by_default_and_only_platform_releases(tmp_path):
+    """Platform first: a fresh paid application lands held, no officer of its own institution
+    can see it anywhere, the citizen still can, and only the platform release endpoint moves
+    it to the institution."""
+    from app import create_app
+    app = create_app({"SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path}/gate.db", "TESTING": True,
+                      "UPLOAD_DIR": str(tmp_path / "up"), "EXPOSE_OTP": True})
+    c = app.test_client()
+    tok = register(c, "0770600101")
+    a = _submit_paid(c, tok)
+    assert a["status"] == "held" and a["released"] is False
+    # the citizen still sees their own application and its held state, including public tracking
+    assert c.get(f"/api/applications/{a['id']}", headers=hdr(tok)).get_json()["status"] == "held"
+    track = c.get(f"/api/applications/track/{a['reference']}").get_json()
+    assert track["status"] == "held"
+    assert any("held" in e["message"].lower() for e in track["events"])
+    # no officer sees it anywhere: not in the queue (even asking for held), not by id, not
+    # through the citizen endpoint, not as a staff action, not even as a count in their stats
+    off = login(c, "+231770000002", "Officer@12345")
+    assert c.get("/api/staff/applications", headers=hdr(off)).get_json() == []
+    assert c.get("/api/staff/applications?status=held", headers=hdr(off)).get_json() == []
+    assert c.get(f"/api/staff/applications/{a['id']}", headers=hdr(off)).status_code == 404
+    assert c.get(f"/api/applications/{a['id']}", headers=hdr(off)).status_code == 404
+    assert c.post(f"/api/staff/applications/{a['id']}/action", headers=hdr(off),
+                  json={"action": "start_review"}).status_code == 404
+    assert "held" not in c.get("/api/admin/stats", headers=hdr(off)).get_json()["by_status"]
+    # the platform sees it in the held queue and can inspect it
+    adm = login(c, "+231770000001", "Admin@12345")
+    held = c.get("/api/admin/applications/held", headers=hdr(adm)).get_json()
+    assert [x["id"] for x in held] == [a["id"]]
+    assert c.get(f"/api/admin/applications/{a['id']}", headers=hdr(adm)).get_json()["status"] == "held"
+    # only the release endpoint moves it: recall before release fails, and a second release fails
+    assert c.post(f"/api/admin/applications/{a['id']}/recall", headers=hdr(adm)).status_code == 409
+    r = c.post(f"/api/admin/applications/{a['id']}/release", headers=hdr(adm))
+    assert r.status_code == 200 and r.get_json()["status"] == "submitted"
+    assert r.get_json()["released"] is True
+    assert c.post(f"/api/admin/applications/{a['id']}/release", headers=hdr(adm)).status_code == 409
+    # only now the institution sees it and can work on it
+    assert c.get("/api/staff/applications", headers=hdr(off)).get_json()
+    assert c.post(f"/api/staff/applications/{a['id']}/action", headers=hdr(off),
+                  json={"action": "start_review"}).status_code == 200
+    # once review has started it can no longer be recalled
+    assert c.post(f"/api/admin/applications/{a['id']}/recall", headers=hdr(adm)).status_code == 409
+
+
+def test_release_mode_setting_and_recall(client):
+    """An admin can read and change release_mode; recall returns a submitted application to held."""
+    tok = register(client, "0770600102")
+    adm = login(client, "+231770000001", "Admin@12345")
+    assert client.get("/api/admin/settings", headers=hdr(tok)).status_code == 403
+    assert client.get("/api/admin/settings", headers=hdr(adm)).get_json() == {"release_mode": "automatic"}
+    assert client.post("/api/admin/settings", headers=hdr(adm),
+                       json={"release_mode": "soon"}).status_code == 400
+    assert client.post("/api/admin/settings", headers=hdr(adm),
+                       json={"release_mode": "manual"}).get_json() == {"release_mode": "manual"}
+    a = _submit_free(client, tok)
+    assert a["status"] == "held"
+    # an application submitted while automatic was on can be recalled, then released again
+    assert client.post("/api/admin/settings", headers=hdr(adm),
+                       json={"release_mode": "automatic"}).status_code == 200
+    b = _submit_free(client, tok)
+    assert b["status"] == "submitted"
+    r = client.post(f"/api/admin/applications/{b['id']}/recall", headers=hdr(adm))
+    assert r.status_code == 200 and r.get_json()["status"] == "held"
+    assert client.get("/api/staff/applications", headers=hdr(login(client, "+231770000002", "Officer@12345"))).get_json() == []
+    r = client.post(f"/api/admin/applications/{b['id']}/release", headers=hdr(adm))
+    assert r.status_code == 200 and r.get_json()["status"] == "submitted"
+
+
+def test_appointment_booking_logs_event_without_changing_status(client):
+    """Booking an appointment writes an 'Appointment set' event, so a status-only timeline can
+    tick it, and leaves the application status exactly where it was."""
+    tok = register(client, "0770600103")
+    center = client.get("/api/centers").get_json()[0]
+    day = _next_weekday()
+    a = client.post("/api/applications", headers=hdr(tok), json={"service_code": "TIN_REG"}).get_json()
+    r = client.post(f"/api/applications/{a['id']}/appointments", headers=hdr(tok),
+                    json={"center": center, "slot": f"{day.isoformat()}T09:00"})
+    assert r.status_code == 201, r.get_json()
+    full = client.get(f"/api/applications/{a['id']}", headers=hdr(tok)).get_json()
+    assert full["status"] == "draft"  # booking must not move a draft forward
+    assert any(e["message"].startswith("Appointment set:") for e in full["events"])
+    track = client.get(f"/api/applications/track/{a['reference']}").get_json()
+    assert any(e["message"].startswith("Appointment set:") for e in track["events"])

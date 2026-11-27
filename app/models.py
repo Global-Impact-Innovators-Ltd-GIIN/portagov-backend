@@ -129,9 +129,11 @@ class Service(db.Model):
         }
 
 
-# draft -> submitted -> in_review -> (info_requested) -> biometric_pending -> approved|rejected
-#   -> ready_for_collection -> completed
-STATUSES = ["draft", "submitted", "in_review", "info_requested", "biometric_pending",
+# draft -> held (manual release mode) -> submitted -> in_review -> (info_requested) -> biometric_pending
+#   -> approved|rejected -> ready_for_collection -> completed
+# "held" means the platform is still holding the application: the citizen applied and paid,
+# but the platform has not released it to the institution yet, so no officer can see it.
+STATUSES = ["draft", "held", "submitted", "in_review", "info_requested", "biometric_pending",
             "approved", "rejected", "ready_for_collection", "completed"]
 
 
@@ -170,6 +172,7 @@ class Application(db.Model):
     def to_dict(self, full=False):
         d = {
             "id": self.id, "reference": self.reference, "status": self.status, "stage": self.stage_info(),
+            "released": self.status not in ("draft", "held"),
             "service": {"id": self.service.id, "code": self.service.code, "name": self.service.name,
                         "institution": self.service.institution.name},
             "fee_usd": self.fee_usd, "paid": self.paid, "bill_id": self.bill_id,

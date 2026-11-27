@@ -99,7 +99,8 @@ def _payments_query(inst_id):
     q = Payment.query.join(Application, Application.id == Payment.application_id).join(
         Service, Service.id == Application.service_id)
     if inst_id:
-        q = q.filter(Service.institution_id == inst_id)
+        # Institution-scoped views never see payments on applications the platform is still holding.
+        q = q.filter(Service.institution_id == inst_id, Application.status != "held")
     return q
 
 
