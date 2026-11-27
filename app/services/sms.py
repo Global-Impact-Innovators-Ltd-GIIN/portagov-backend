@@ -55,7 +55,7 @@ def send(phone, text):
             auth = base64.b64encode(f"{sid}:{cfg['SMS_AUTH_TOKEN']}".encode()).decode()
             sender = cfg["SMS_FROM"]
             # A Messaging Service SID (MG...) carries a registered alphanumeric sender ID, which Liberia's MTN
-            # network requires; otherwise SMS_FROM is a phone number or an alphanumeric ID such as "eLiberia".
+            # network requires; otherwise SMS_FROM is a phone number or an alphanumeric ID such as "PortaGov".
             form = {"To": phone, "Body": text,
                     ("MessagingServiceSid" if sender.startswith("MG") and len(sender) == 34 else "From"): sender}
             req = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode(),

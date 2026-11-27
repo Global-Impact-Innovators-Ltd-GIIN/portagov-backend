@@ -125,7 +125,7 @@ def _mtn_request_to_pay(payment, application):
     msisdn = "".join(ch for ch in (payment.msisdn or "") if ch.isdigit())
     body = {"amount": f"{payment.amount_usd:.2f}", "currency": payment.currency, "externalId": payment.txn_ref,
             "payer": {"partyIdType": "MSISDN", "partyId": msisdn},
-            "payerMessage": f"eLiberia {application.reference}"[:160],
+            "payerMessage": f"PortaGov {application.reference}"[:160],
             "payeeNote": application.service.name[:160]}
     headers = {**_mtn_headers(_mtn_token()), "X-Reference-Id": ref}
     callback = current_app.config.get("MTN_MOMO_CALLBACK_URL")

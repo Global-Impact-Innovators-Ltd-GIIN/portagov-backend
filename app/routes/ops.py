@@ -168,7 +168,7 @@ def reconciliation():
         audit("payments_export", f"{start}..{end}")
         db.session.commit()
         return Response(out.getvalue(), mimetype="text/csv", headers={
-            "Content-Disposition": f'attachment; filename="eliberia-payments-{start}-{end}.csv"'})
+            "Content-Disposition": f'attachment; filename="portagov-payments-{start}-{end}.csv"'})
     return jsonify({"from": start.isoformat(), "to": end.isoformat(), "count": len(items), "totals": totals,
                     "by_method": by_method, "by_day": dict(sorted(by_day.items())), "items": items[:500]})
 

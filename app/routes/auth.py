@@ -19,10 +19,10 @@ MAX_OTP_ATTEMPTS = 5
 def _send_otp(u, purpose="verify"):
     u.otp_code, u.otp_expires, u.otp_attempts = gen_otp(), now() + timedelta(minutes=10), 0
     u.otp_purpose = purpose
-    text = {"verify": "Your eLiberia code is {c}",
-            "reset": "{c} is your eLiberia password reset code. Never share it with anyone.",
-            "login": "{c} is your eLiberia staff sign-in code. Never share it with anyone."}[purpose]
-    notify(u.id, "eLiberia code", text.format(c=u.otp_code), channel="sms")
+    text = {"verify": "Your PortaGov code is {c}",
+            "reset": "{c} is your PortaGov password reset code. Never share it with anyone.",
+            "login": "{c} is your PortaGov staff sign-in code. Never share it with anyone."}[purpose]
+    notify(u.id, "PortaGov code", text.format(c=u.otp_code), channel="sms")
 
 
 def _check_otp(u, code, purpose):
@@ -121,7 +121,7 @@ def login():
             db.session.commit()
         return err("Incorrect phone number or password", 401)
     if u.disabled:
-        return err("This account has been disabled. Contact the eLiberia team.", 403)
+        return err("This account has been disabled. Contact the PortaGov team.", 403)
     if not u.phone_verified:
         return err("Phone number not verified", 403)
     u.failed_logins, u.locked_until = 0, None

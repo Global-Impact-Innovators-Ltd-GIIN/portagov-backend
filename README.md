@@ -1,6 +1,6 @@
-# eLiberia Backend
+# PortaGov Backend
 
-A robust backend API for the eLiberia project built with **Python** and **Flask**.
+A robust backend API for the PortaGov project built with **Python** and **Flask**.
 
 ## Tech Stack
 

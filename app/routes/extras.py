@@ -257,7 +257,7 @@ def admin_update_service(code):
 
 
 # ---------------- USSD (feature phones) ----------------
-MENU = "Welcome to eLiberia\n1. Track application\n2. My applications\n3. Check a service fee\n4. Verify certificate"
+MENU = "Welcome to PortaGov\n1. Track application\n2. My applications\n3. Check a service fee\n4. Verify certificate"
 LABEL = {"draft": "Not yet submitted", "held": "Received - awaiting release", "submitted": "Received", "in_review": "Being reviewed",
          "info_requested": "More information needed", "biometric_pending": "Identity check needed",
          "approved": "Approved", "rejected": "Rejected", "ready_for_collection": "Ready for collection",
@@ -290,7 +290,7 @@ def _ussd_reply(text, phone, trusted):
         rows = (Application.query.filter_by(user_id=u.id).order_by(Application.id.desc()).limit(3).all()
                 if u else [])
         if not rows:
-            return "END You have no applications yet. Visit an eLiberia agent to apply."
+            return "END You have no applications yet. Visit a PortaGov agent to apply."
         return "END " + "\n".join(f"{a.service.name[:28]}: {LABEL.get(a.status, a.status)}" for a in rows)
     if choice == "3":
         if arg is None:

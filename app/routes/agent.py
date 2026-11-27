@@ -59,7 +59,7 @@ def start():
         created = True
     u.otp_code, u.otp_expires, u.otp_attempts, u.otp_purpose = gen_otp(), now() + timedelta(minutes=10), 0, "consent"
     notify(u.id, "Agent assistance code",
-           f"{u.otp_code} is your eLiberia consent code. Give it ONLY to agent {g.user.full_name} if you "
+           f"{u.otp_code} is your PortaGov consent code. Give it ONLY to agent {g.user.full_name} if you "
            f"are with them now.", channel="sms")
     audit("agent_consent_requested", phone)
     db.session.commit()
