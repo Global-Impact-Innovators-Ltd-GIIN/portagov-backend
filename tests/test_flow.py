@@ -561,6 +561,71 @@ def test_consent_and_sms_delivery(client, monkeypatch):
     assert any("submitted" in t.lower() for _, t in sent)  # status updates go out by SMS too
 
 
+def test_otp_email_delivery(client, monkeypatch):
+    from app.services import email
+    sent = []
+    monkeypatch.setattr(email, "send", lambda to, subject, body: sent.append((to, subject, body)) or True)
+    # no email address on the account: no email, SMS path untouched
+    r = client.post("/api/auth/register", json={"full_name": "No Mail", "phone": "0770600002",
+                                                "password": "Passw0rd!", "accept_terms": True})
+    assert r.status_code == 201
+    assert sent == []
+    # with an email address: the same code goes by email too
+    r = client.post("/api/auth/register", json={"full_name": "Has Mail", "phone": "0770600003",
+                                                "password": "Passw0rd!", "email": "has.mail@example.com",
+                                                "accept_terms": True})
+    assert r.status_code == 201
+    code = r.get_json()["dev_otp"]
+    assert len(sent) == 1
+    to, subject, body = sent[0]
+    assert to == "has.mail@example.com"
+    assert code in body and "verification code" in subject.lower()
+    assert "SMS and email" in r.get_json()["message"]
+    # a refused request emails nobody
+    sent.clear()
+    r = client.post("/api/auth/register", json={"full_name": "No Consent", "phone": "0770600004",
+                                                "password": "Passw0rd!"})
+    assert r.status_code == 400
+    assert sent == []
+
+
+def test_email_send_uses_smtp(client, monkeypatch):
+    from app.services import email
+    app = client.application
+    app.config.update({"SMTP_HOST": "mail.example.test", "SMTP_PORT": 465,
+                       "SMTP_USER": "noreply@portagov.giin.co.rw", "SMTP_PASS": "secret",
+                       "MAIL_FROM": "noreply@portagov.giin.co.rw"})
+    made = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout=None):
+            made.append(("connect", host, port))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def login(self, u, p):
+            made.append(("login", u, p))
+
+        def send_message(self, msg):
+            made.append(("msg", msg["From"], msg["To"], msg["Subject"], msg.get_content()))
+
+    monkeypatch.setattr(email.smtplib, "SMTP_SSL", FakeSMTP)
+    with app.app_context():
+        assert email.send("a@example.com", "Subject here", "Body here") is True
+    assert ("connect", "mail.example.test", 465) in made
+    assert ("login", "noreply@portagov.giin.co.rw", "secret") in made
+    assert any(m[0] == "msg" and m[1] == "noreply@portagov.giin.co.rw"
+               and m[2] == "a@example.com" and "Body here" in m[4] for m in made)
+    # unconfigured: nothing is sent and the call does not raise
+    app.config.update({"SMTP_HOST": None, "SMTP_USER": None, "SMTP_PASS": None})
+    with app.app_context():
+        assert email.send("a@example.com", "Subject here", "Body here") is False
+
+
 def test_live_payments_webhook_refund_and_reconciliation(client):
     app = client.application
     app.config.update(PAYMENT_PROVIDER="live", PAYMENT_WEBHOOK_SECRET="whsec-test")

@@ -50,6 +50,14 @@ class Config:
     SMS_AUTH_TOKEN = os.getenv("SMS_AUTH_TOKEN") or None
     SMS_FROM = os.getenv("SMS_FROM") or None
     SMS_UPDATES = os.getenv("SMS_UPDATES", "True").lower() == "true"  # also text status updates
+    # email: one-time codes go to the user's email address as well as by SMS.
+    # The mailbox is noreply@portagov.giin.co.rw on the ServerByt control panel.
+    # Values are set in Render, never in code.
+    SMTP_HOST = os.getenv("SMTP_HOST") or None
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER") or None
+    SMTP_PASS = os.getenv("SMTP_PASS") or None
+    MAIL_FROM = os.getenv("MAIL_FROM", "noreply@portagov.giin.co.rw")
     # files: local | s3  (see services/storage.py)
     STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local")
     STORAGE_S3_BUCKET = os.getenv("STORAGE_S3_BUCKET") or None

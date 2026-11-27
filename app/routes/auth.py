@@ -23,6 +23,12 @@ def _send_otp(u, purpose="verify"):
             "reset": "{c} is your PortaGov password reset code. Never share it with anyone.",
             "login": "{c} is your PortaGov staff sign-in code. Never share it with anyone."}[purpose]
     notify(u.id, "PortaGov code", text.format(c=u.otp_code), channel="sms")
+    # Email as well when the account has an address. SMS stays exactly as it
+    # was for everyone, including users with no email at all.
+    if getattr(u, "email", None):
+        from ..services import email as email_service
+        notify(u.id, "PortaGov code", text.format(c=u.otp_code), channel="email")
+        email_service.send_otp_email(u.email, u.otp_code, purpose)
 
 
 def _check_otp(u, code, purpose):
@@ -69,7 +75,9 @@ def register():
     _send_otp(u)
     audit("register", phone, user_id=u.id)
     db.session.commit()
-    out = {"user": u.to_dict(), "message": "Account created. Enter the code sent by SMS."}
+    out = {"user": u.to_dict(),
+           "message": "Account created. Enter the code sent by SMS and email."
+           if u.email else "Account created. Enter the code sent by SMS."}
     if current_app.config["EXPOSE_OTP"]:
         out["dev_otp"] = u.otp_code
     return jsonify(out), 201
@@ -129,7 +137,9 @@ def login():
         _send_otp(u, "login")
         audit("login_password_ok", u.phone, user_id=u.id)
         db.session.commit()
-        out = {"two_factor": True, "message": "Enter the sign-in code sent to your phone."}
+        out = {"two_factor": True,
+               "message": "Enter the sign-in code sent to your phone and email."
+               if u.email else "Enter the sign-in code sent to your phone."}
         if current_app.config["EXPOSE_OTP"]:
             out["dev_otp"] = u.otp_code
         return jsonify(out)
@@ -219,7 +229,8 @@ def forgot():
     """Start a password reset. Also how a citizen registered by an agent sets their first password."""
     d = request.get_json(silent=True) or {}
     u = User.query.filter_by(phone=normalize_phone(d.get("phone")) or "").first()
-    out = {"message": "If the account exists, a reset code was sent by SMS."}
+    out = {"message": "If the account exists, a reset code was sent by SMS and email."
+           if u and u.email else "If the account exists, a reset code was sent by SMS."}
     if u:
         _send_otp(u, "reset")
         audit("password_reset_requested", u.phone, user_id=u.id)

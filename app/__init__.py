@@ -37,6 +37,8 @@ def create_app(config=None):
 
     from .services import sms as _sms
     app.after_request(_sms.flush)
+    from .services import email as _email
+    app.after_request(_email.flush)
 
     @app.after_request
     def headers(resp):
