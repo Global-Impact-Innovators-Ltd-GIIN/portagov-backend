@@ -70,6 +70,42 @@ def test_auth_rules(client):
     assert client.get("/api/applications").status_code == 401
 
 
+def test_login_with_email_or_phone(client):
+    # Citizen with an email: register, verify, then sign in by email.
+    r = client.post("/api/auth/register", json={"full_name": "Ma Test", "phone": "0770111333",
+                                                "email": "Ma.Test@Example.com", "password": "Passw0rd!",
+                                                "accept_terms": True})
+    assert r.status_code == 201
+    assert client.post("/api/auth/verify-otp", json={"phone": "0770111333",
+                                                     "otp": r.get_json()["dev_otp"]}).status_code == 200
+    # Email sign-in, mixed case on purpose: the lookup is case-insensitive.
+    r = client.post("/api/auth/login", json={"identifier": "ma.test@example.com", "password": "Passw0rd!"})
+    assert r.status_code == 200 and r.get_json()["token"]
+    # Phone sign-in still works for the same account.
+    r = client.post("/api/auth/login", json={"phone": "0770111333", "password": "Passw0rd!"})
+    assert r.status_code == 200 and r.get_json()["token"]
+    # Wrong password by email, and unknown email: the same generic error,
+    # with no hint about which accounts exist.
+    for ident in ("ma.test@example.com", "nobody@example.com"):
+        r = client.post("/api/auth/login", json={"identifier": ident, "password": "WrongPass1!"})
+        assert r.status_code == 401
+        assert r.get_json()["error"] == "Incorrect email, phone number or password"
+    assert client.post("/api/auth/login", json={"identifier": "0770111999",
+                                                "password": "WrongPass1!"}).status_code == 401
+    # Staff two-factor by email: the code goes to both channels, and the
+    # verify step finds the account by the email used at login.
+    with client.application.app_context():
+        from app.extensions import db
+        from app.models import User
+        admin = User.query.filter_by(phone="+231770000001").first()
+        admin.email = "admin@example.com"
+        db.session.commit()
+    r = client.post("/api/auth/login", json={"identifier": "admin@example.com", "password": "Admin@12345"}).get_json()
+    assert r.get("two_factor") is True and r.get("code_channels") == ["sms", "email"]
+    r = client.post("/api/auth/login/verify", json={"identifier": "admin@example.com", "otp": r["dev_otp"]})
+    assert r.status_code == 200 and r.get_json()["token"]
+
+
 def test_full_digital_flow_with_remote_biometrics(client):
     tok = register(client)
     a = client.post("/api/applications", headers=hdr(tok), json={"service_code": "NATIONAL_ID_NEW"}).get_json()

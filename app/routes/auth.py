@@ -31,6 +31,22 @@ def _send_otp(u, purpose="verify"):
         email_service.send_otp_email(u.email, u.otp_code, purpose)
 
 
+def _find_user(identifier):
+    """Find an account by email address or phone number.
+
+    An identifier containing @ is an email address, looked up
+    case-insensitively. Anything else is a phone number, looked up
+    with the existing normalize_phone rules. Returns None when there
+    is no match, so callers can give the same generic error for an
+    unknown email as for an unknown phone and never reveal which
+    accounts exist."""
+    ident = (identifier or "").strip()
+    if "@" in ident:
+        return User.query.filter(db.func.lower(User.email) == ident.lower()).first()
+    phone = normalize_phone(ident) or ""
+    return User.query.filter_by(phone=phone).first() if phone else None
+
+
 def _check_otp(u, code, purpose):
     """Return an error response, or None when the code is right for this purpose."""
     if (not u or not u.otp_code or (u.otp_purpose or "verify") != purpose
@@ -101,7 +117,7 @@ def verify_otp():
 @rate_limit("resend", 5, 600)
 def resend_otp():
     d = request.get_json(silent=True) or {}
-    u = User.query.filter_by(phone=normalize_phone(d.get("phone")) or "").first()
+    u = _find_user(d.get("identifier") or d.get("phone"))
     if u and not u.phone_verified:
         _send_otp(u)
         db.session.commit()
@@ -114,7 +130,7 @@ def resend_otp():
 @rate_limit("login", 20, 600)
 def login():
     d = request.get_json(silent=True) or {}
-    u = User.query.filter_by(phone=normalize_phone(d.get("phone")) or "").first()
+    u = _find_user(d.get("identifier") or d.get("phone"))
     if u and u.locked_until and u.locked_until > now():
         mins = int((u.locked_until - now()).total_seconds() // 60) + 1
         return err(f"Account temporarily locked after too many failed attempts. Try again in {mins} minutes.", 423)
@@ -127,7 +143,7 @@ def login():
                                                "change your password.")
                 audit("account_locked", u.phone, user_id=u.id)
             db.session.commit()
-        return err("Incorrect phone number or password", 401)
+        return err("Incorrect email, phone number or password", 401)
     if u.disabled:
         return err("This account has been disabled. Contact the PortaGov team.", 403)
     if not u.phone_verified:
@@ -138,6 +154,7 @@ def login():
         audit("login_password_ok", u.phone, user_id=u.id)
         db.session.commit()
         out = {"two_factor": True,
+               "code_channels": ["sms", "email"] if u.email else ["sms"],
                "message": "Enter the sign-in code sent to your phone and email."
                if u.email else "Enter the sign-in code sent to your phone."}
         if current_app.config["EXPOSE_OTP"]:
@@ -266,7 +283,7 @@ def reset():
 def login_verify():
     """Second step of staff / agent sign-in."""
     d = request.get_json(silent=True) or {}
-    u = User.query.filter_by(phone=normalize_phone(d.get("phone")) or "").first()
+    u = _find_user(d.get("identifier") or d.get("phone"))
     bad = _check_otp(u, d.get("otp"), "login")
     if bad:
         return bad
