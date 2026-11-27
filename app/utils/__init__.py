@@ -117,7 +117,7 @@ def notify(user_id, title, body, channel="app"):
     if channel == "sms" or current_app.config.get("SMS_UPDATES"):
         u = db.session.get(User, user_id)
         if u and not u.disabled:
-            sms.queue(u.phone, body if channel == "sms" else f"eLiberia: {title}. {body}")
+            sms.queue(u.phone, body if channel == "sms" else f"PortaGov: {title}. {body}")
 
 
 def gen_otp():
@@ -176,5 +176,5 @@ def record_access(application, what):
         return
     inst = db.session.get(Institution, u.institution_id) if u.institution_id else None
     db.session.add(AccessLog(application_id=application.id, viewer_id=u.id, viewer_name=u.full_name,
-                             viewer_role=u.role, organisation=inst.name if inst else "eLiberia platform team",
+                             viewer_role=u.role, organisation=inst.name if inst else "PortaGov platform team",
                              what=what[:120]))

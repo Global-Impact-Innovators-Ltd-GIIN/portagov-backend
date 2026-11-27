@@ -305,7 +305,7 @@ def test_ussd_channel(client):
     def dial(text, phone="+231770999004", key=None):
         url = "/api/ussd" + (f"?key={key}" if key else "")
         return client.post(url, data={"sessionId": "s1", "phoneNumber": phone, "text": text}).get_data(as_text=True)
-    assert dial("").startswith("CON Welcome to eLiberia")
+    assert dial("").startswith("CON Welcome to PortaGov")
     tok = register(client, "0770999004")
     a = client.post("/api/applications", headers=hdr(tok), json={"service_code": "PASSPORT_NEW"}).get_json()
     assert dial("1").startswith("CON")
@@ -470,7 +470,7 @@ def test_data_reuse_access_transparency_and_export(client):
     for _ in range(2):
         client.get(f"/api/staff/applications/{first['id']}", headers=hdr(adm))
     seen = client.get(f"/api/applications/{first['id']}/access", headers=hdr(tok)).get_json()
-    assert len(seen) == 1 and seen[0]["viewer_name"] == "System Admin" and seen[0]["organisation"] == "eLiberia platform team"
+    assert len(seen) == 1 and seen[0]["viewer_name"] == "System Admin" and seen[0]["organisation"] == "PortaGov platform team"
     other = register(client, "0770444031")
     assert client.get(f"/api/applications/{first['id']}/access", headers=hdr(other)).status_code == 404
     export = client.get("/api/me/export", headers=hdr(tok)).get_json()

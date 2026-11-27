@@ -32,7 +32,7 @@ def renewal_reminders():
         else:
             title = "Renewal reminder"
             body = (f"{c.service_name} {c.number} expires on {c.expires_at:%d %b %Y} "
-                    f"({'today' if left == 0 else f'in {left} days'}). Renew online at eLiberia.")
+                    f"({'today' if left == 0 else f'in {left} days'}). Renew online at PortaGov.")
         notify(a.user_id, title, body)
         c.reminders_sent = done + [threshold]
         sent += 1

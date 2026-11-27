@@ -1,7 +1,7 @@
-# eLiberia - going live
+# PortaGov - going live
 
 The admin console has a **Launch readiness** tab that checks each item below. Settings are environment
-variables on the Render service (Dashboard > eliberia-backend > Environment), except `EXPOSE_OTP`,
+variables on the Render service (Dashboard > portagov-backend > Environment), except `EXPOSE_OTP`,
 `DEMO_MODE` and `TASKS_SECRET`, which live in `backend/render.yaml` - change those in the file and push,
 because the blueprint overwrites dashboard edits.
 

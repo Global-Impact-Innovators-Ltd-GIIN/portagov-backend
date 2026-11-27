@@ -260,7 +260,7 @@ def access_history(app_id):
 @bp.get("/me/export")
 @auth_required("citizen")
 def export_my_data():
-    """Everything eLiberia holds about the signed-in citizen, in one file."""
+    """Everything PortaGov holds about the signed-in citizen, in one file."""
     u = g.user
     apps = Application.query.filter_by(user_id=u.id).order_by(Application.id).all()
     ids = [a.id for a in apps] or [0]

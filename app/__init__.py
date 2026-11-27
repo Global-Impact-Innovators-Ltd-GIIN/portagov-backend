@@ -20,7 +20,7 @@ def create_app(config=None):
     @app.get("/api/health")
     def health():
         ok = not app.config.get("DATA_KEY_MISMATCH")
-        return jsonify({"status": "ok" if ok else "degraded", "service": "eLiberia API", "data_key_ok": ok})
+        return jsonify({"status": "ok" if ok else "degraded", "service": "PortaGov API", "data_key_ok": ok})
 
     @app.errorhandler(404)
     def nf(_):

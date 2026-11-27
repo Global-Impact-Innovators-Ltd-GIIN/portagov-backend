@@ -1,8 +1,8 @@
 """Encrypted database backup and restore.
 
-  python backup.py backup  --out eliberia-2026-11-16.backup      (needs DATABASE_URL, BACKUP_KEY)
-  python backup.py inspect --file eliberia-2026-11-16.backup     (row counts only; needs BACKUP_KEY)
-  python backup.py restore --file eliberia-2026-11-16.backup --yes --replace
+  python backup.py backup  --out portagov-2026-11-16.backup      (needs DATABASE_URL, BACKUP_KEY)
+  python backup.py inspect --file portagov-2026-11-16.backup     (row counts only; needs BACKUP_KEY)
+  python backup.py restore --file portagov-2026-11-16.backup --yes --replace
       (into a NEW deployment: start the app once against the new database so its tables exist;
        --replace wipes that new database's seeded rows before loading the backup)
 
@@ -78,7 +78,7 @@ def _load(path):
     with open(path, "rb") as f:
         data = json.loads(gzip.decompress(_fernet().decrypt(f.read())))
     if data.get("format") != FORMAT:
-        sys.exit("Not an eLiberia backup file")
+        sys.exit("Not a PortaGov backup file")
     return data
 
 
@@ -120,7 +120,7 @@ def restore(path, yes, replace=False):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", choices=["backup", "inspect", "restore"])
-    ap.add_argument("--out", default=f"eliberia-{dt.date.today().isoformat()}.backup")
+    ap.add_argument("--out", default=f"portagov-{dt.date.today().isoformat()}.backup")
     ap.add_argument("--file")
     ap.add_argument("--yes", action="store_true")
     ap.add_argument("--replace", action="store_true", help="wipe the target database before restoring")

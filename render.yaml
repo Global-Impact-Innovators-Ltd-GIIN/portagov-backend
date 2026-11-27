@@ -1,10 +1,10 @@
 databases:
-  - name: eliberia-db
+  - name: portagov-db
     plan: free   # Render free Postgres expires after 30 days; move to Neon/Supabase for longer use
 
 services:
   - type: web
-    name: eliberia-backend
+    name: portagov-backend
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
@@ -19,10 +19,10 @@ services:
         value: "False"
       - key: DATABASE_URL
         fromDatabase:
-          name: eliberia-db
+          name: portagov-db
           property: connectionString
       - key: CORS_ORIGINS
-        sync: false   # the Vercel frontend URL, e.g. https://eliberia.vercel.app
+        sync: false   # the Vercel frontend URL, e.g. https://portagov.giin.co.rw
       - key: EXPOSE_OTP
         value: "True" # demo only: no SMS gateway yet. Set False here once SMS is wired.
       - key: DEMO_MODE
