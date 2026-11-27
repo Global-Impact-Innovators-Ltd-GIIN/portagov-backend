@@ -301,6 +301,23 @@ class Notification(db.Model):
                 "read": self.read, "created_at": self.created_at.isoformat()}
 
 
+class Announcement(db.Model):
+    """A notice from the platform or a ministry. Shown on the citizen
+    home strip, the announcement board and the emergency banner, so a
+    notice posted once reaches every device."""
+    id = db.Column(db.Integer, primary_key=True)
+    ministry = db.Column(db.String(120), nullable=False, default="PortaGov")
+    title = db.Column(db.String(160), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    urgent = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=now)
+
+    def to_dict(self):
+        return {"id": self.id, "ministry": self.ministry, "title": self.title,
+                "body": self.body, "urgent": bool(self.urgent),
+                "created_at": self.created_at.isoformat()}
+
+
 class AuditLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer)
