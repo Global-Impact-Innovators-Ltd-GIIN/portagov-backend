@@ -16,7 +16,10 @@ LOCK_MINUTES = 15
 MAX_OTP_ATTEMPTS = 5
 
 
-def _send_otp(u, purpose="verify"):
+def _make_otp(u, purpose="verify"):
+    """Generate a code and send it by SMS. OTP generation and the SMS call
+    are exactly as they were; only the email is handled separately, so the
+    code is stored before any email about it is sent."""
     u.otp_code, u.otp_expires, u.otp_attempts = gen_otp(), now() + timedelta(minutes=10), 0
     u.otp_purpose = purpose
     text = {"verify": "Your PortaGov code is {c}",
@@ -28,7 +31,27 @@ def _send_otp(u, purpose="verify"):
     if getattr(u, "email", None):
         from ..services import email as email_service
         notify(u.id, "PortaGov code", text.format(c=u.otp_code), channel="email")
-        email_service.send_otp_email(u.email, u.otp_code, purpose)
+
+
+def _send_otp_email(u, purpose="verify"):
+    """Send the OTP email for a code that is already stored. Returns True
+    when SMTP accepted it, False when sending failed, and None when the
+    account has no email and no email was attempted."""
+    if not getattr(u, "email", None):
+        return None
+    from ..services import email as email_service
+    return email_service.send_otp_email(u.email, u.otp_code, purpose)
+
+
+def _send_otp(u, purpose="verify"):
+    """Generate a code and send it by SMS and email, returning the email
+    outcome: True when sent, False when sending failed, None when the
+    account has no email. Endpoints that answer the user should use
+    _make_otp, commit, then _send_otp_email instead, so the email only
+    goes out once the code exists on the server. This wrapper stays for
+    flows that do not report the outcome."""
+    _make_otp(u, purpose)
+    return _send_otp_email(u, purpose)
 
 
 def _find_user(identifier):
@@ -88,12 +111,17 @@ def register():
              terms_accepted_at=now())
     db.session.add(u)
     db.session.flush()
-    _send_otp(u)
+    _make_otp(u)
     audit("register", phone, user_id=u.id)
     db.session.commit()
-    out = {"user": u.to_dict(),
-           "message": "Account created. Enter the code sent by SMS and email."
-           if u.email else "Account created. Enter the code sent by SMS."}
+    email_sent = _send_otp_email(u)
+    if u.email:
+        message = ("Account created. Enter the code sent by SMS and email." if email_sent
+                   else "Account created. Enter the code sent by SMS. The email could not be sent, "
+                        "so check your phone for the code.")
+    else:
+        message = "Account created. Enter the code sent by SMS."
+    out = {"user": u.to_dict(), "email_sent": email_sent, "message": message}
     if current_app.config["EXPOSE_OTP"]:
         out["dev_otp"] = u.otp_code
     return jsonify(out), 201
@@ -119,11 +147,16 @@ def resend_otp():
     d = request.get_json(silent=True) or {}
     u = _find_user(d.get("identifier") or d.get("phone"))
     if u and not u.phone_verified:
-        _send_otp(u)
+        _make_otp(u)
         db.session.commit()
+        email_sent = _send_otp_email(u)
         if current_app.config["EXPOSE_OTP"]:
-            return jsonify({"message": "Code sent", "dev_otp": u.otp_code})
-    return jsonify({"message": "If the account exists, a code was sent"})
+            message = "Code sent"
+            if email_sent is False:
+                message = ("Code sent by SMS. The email could not be sent, "
+                           "so check your phone for the code.")
+            return jsonify({"message": message, "dev_otp": u.otp_code, "email_sent": email_sent})
+    return jsonify({"message": "If the account exists, a code was sent", "email_sent": None})
 
 
 @bp.post("/login")
@@ -150,13 +183,20 @@ def login():
         return err("Phone number not verified", 403)
     u.failed_logins, u.locked_until = 0, None
     if u.role != "citizen" and current_app.config["STAFF_2FA"]:
-        _send_otp(u, "login")
+        _make_otp(u, "login")
         audit("login_password_ok", u.phone, user_id=u.id)
         db.session.commit()
+        email_sent = _send_otp_email(u, "login")
+        if u.email:
+            message = ("Enter the sign-in code sent to your phone and email." if email_sent
+                       else "Enter the sign-in code sent to your phone. The email could not be sent, "
+                            "so check your phone for the code.")
+        else:
+            message = "Enter the sign-in code sent to your phone."
         out = {"two_factor": True,
                "code_channels": ["sms", "email"] if u.email else ["sms"],
-               "message": "Enter the sign-in code sent to your phone and email."
-               if u.email else "Enter the sign-in code sent to your phone."}
+               "email_sent": email_sent,
+               "message": message}
         if current_app.config["EXPOSE_OTP"]:
             out["dev_otp"] = u.otp_code
         return jsonify(out)

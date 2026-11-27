@@ -8,20 +8,15 @@ before, and a missing mail setup never breaks a request. Port 465 uses
 implicit SSL; any other port uses STARTTLS.
 
 Messages are queued during a request and only sent once the response
-succeeded, so a request that fails and rolls back never emails a code
-that no longer exists on the server.
+succeeded, so a request that fails and rolls back never emails a message
+that no longer exists on the server. One-time codes are the exception:
+send_otp_email() sends inline and returns the outcome, because the
+caller must tell the user truthfully whether the email went out.
 """
-import re
 import smtplib
 from email.message import EmailMessage
 
 from flask import current_app, g, has_request_context
-
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-def is_valid_email(addr):
-    return bool(addr and EMAIL_RE.match(str(addr).strip()))
 
 
 def _configured():
@@ -88,9 +83,17 @@ OTP_LINES = {
 
 
 def send_otp_email(to, code, purpose="verify"):
-    """Queue a one-time code email. Nothing is sent until the request succeeds."""
+    """Send a one-time code email now and report the outcome.
+
+    Returns True when SMTP accepted the message, False when sending
+    failed (including when SMTP is not configured), and None when there
+    is no address to send to. Sent inline, not queued: the caller needs
+    the outcome before it answers the user, so a failed send is
+    reported instead of claimed as sent. Callers send the code only
+    after it is stored, so a sent code always exists on the server.
+    """
     if not to:
-        return
+        return None
     line = OTP_LINES.get(purpose, OTP_LINES["verify"]).format(c=code)
     body = (
         "Hello,\n\n"
@@ -98,32 +101,7 @@ def send_otp_email(to, code, purpose="verify"):
         "If you did not ask for this code, please ignore this email.\n\n"
         "PortaGov, Citizens. Services. Connected."
     )
-    queue(to, OTP_SUBJECTS.get(purpose, OTP_SUBJECTS["verify"]), body)
-
-
-def send_manual(to, subject, body, application_id=None, user_id=None, sent_by=None, source="manual"):
-    """Send one mail now (an admin action or an automation rule) and record it as a
-    MailMessage (direction out) plus an audit entry. Returns (MailMessage, delivered).
-    The row is written even when SMTP is not configured, so the Sent list is an honest
-    record: `delivered` is False then, and the caller must say so. Raises ValueError
-    for a missing or malformed recipient. The caller commits."""
-    from ..models import MailMessage
-    to = (to or "").strip()
-    if not is_valid_email(to):
-        raise ValueError("Enter a valid email address")
-    if not subject or not (body or "").strip():
-        raise ValueError("Subject and body are required")
-    msg = MailMessage(direction="out", from_addr=current_app.config.get("MAIL_FROM"),
-                      to_addr=to, subject=subject[:200], body=body, application_id=application_id,
-                      user_id=user_id, sent_by=sent_by, source=source)
-    from ..extensions import db
-    db.session.add(msg)
-    db.session.flush()  # give the row an id before the audit entry names it
-    if has_request_context():
-        from ..utils import audit
-        audit("mail_send", f"{source} mail to {to} (id {msg.id})", user_id=sent_by)
-    delivered = send(to, subject, body)
-    return msg, delivered
+    return send(to, OTP_SUBJECTS.get(purpose, OTP_SUBJECTS["verify"]), body)
 
 
 def status():
