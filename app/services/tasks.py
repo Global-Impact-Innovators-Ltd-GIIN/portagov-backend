@@ -67,8 +67,10 @@ def purge_old_notifications():
 
 
 def run_daily():
+    from . import mail_rules
     result = {"renewal_reminders": renewal_reminders(), "expired_payments": expire_stale_payments(),
-              "drafts_deleted": purge_old_drafts(), "notifications_deleted": purge_old_notifications()}
+              "drafts_deleted": purge_old_drafts(), "notifications_deleted": purge_old_notifications(),
+              "mail_rules": mail_rules.run_all_rules()}
     db.session.commit()
     return result
 

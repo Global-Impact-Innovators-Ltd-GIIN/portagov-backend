@@ -420,3 +420,71 @@ class FamilyMember(db.Model):
 class SystemSetting(db.Model):
     key = db.Column(db.String(60), primary_key=True)
     value = db.Column(db.String(300))
+
+
+# ------------------------------------------------------------------ platform mail
+class MailMessage(db.Model):
+    """One mail the platform received or sent. One-time codes are NOT stored here:
+    they are recorded as notifications, and the Sent list says so."""
+    id = db.Column(db.Integer, primary_key=True)
+    direction = db.Column(db.String(10), nullable=False)  # in | out
+    from_addr = db.Column(db.String(150))
+    to_addr = db.Column(db.String(150))
+    subject = db.Column(db.String(200))
+    body = db.Column(db.Text)
+    application_id = db.Column(db.Integer, db.ForeignKey("application.id"))
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    external_id = db.Column(db.String(300), index=True)  # IMAP Message-ID, for dedupe
+    read = db.Column(db.Boolean, default=False)  # inbox only: has an admin read it
+    sent_by = db.Column(db.Integer)  # admin user id, for mail the platform sent
+    source = db.Column(db.String(20))  # manual | automation | inbox | otp (otp rows are never created)
+    created_at = db.Column(db.DateTime, default=now)
+
+    def to_dict(self):
+        return {"id": self.id, "direction": self.direction, "from": self.from_addr, "to": self.to_addr,
+                "subject": self.subject, "body": self.body, "application_id": self.application_id,
+                "user_id": self.user_id, "read": bool(self.read), "sent_by": self.sent_by,
+                "source": self.source, "created_at": self.created_at.isoformat()}
+
+
+class MailRule(db.Model):
+    """An automation rule: when the trigger matches, email the citizen."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    trigger = db.Column(db.String(40), nullable=False)  # see services/mail_rules.py TRIGGERS
+    hours = db.Column(db.Integer)  # threshold for time-based triggers; None = the trigger default
+    subject_template = db.Column(db.String(200))
+    body_template = db.Column(db.Text)
+    enabled = db.Column(db.Boolean, default=True)
+    last_run_at = db.Column(db.DateTime)
+    created_by = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=now)
+    updated_at = db.Column(db.DateTime, default=now, onupdate=now)
+
+    def to_dict(self):
+        return {"id": self.id, "name": self.name, "trigger": self.trigger, "hours": self.hours,
+                "subject_template": self.subject_template, "body_template": self.body_template,
+                "enabled": bool(self.enabled),
+                "last_run_at": self.last_run_at.isoformat() if self.last_run_at else None,
+                "created_at": self.created_at.isoformat(),
+                "updated_at": self.updated_at.isoformat() if self.updated_at else None}
+
+
+class MailRuleRun(db.Model):
+    """One attempt by one rule: sent, skipped (no email on file, or already sent within 24h)
+    or failed, with the reason in plain words."""
+    id = db.Column(db.Integer, primary_key=True)
+    rule_id = db.Column(db.Integer, db.ForeignKey("mail_rule.id"), nullable=False)
+    application_id = db.Column(db.Integer, db.ForeignKey("application.id"))
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    recipient = db.Column(db.String(150))
+    subject = db.Column(db.String(200))
+    status = db.Column(db.String(20), default="sent")  # sent | skipped | failed
+    detail = db.Column(db.String(300))
+    created_at = db.Column(db.DateTime, default=now)
+
+    def to_dict(self):
+        return {"id": self.id, "rule_id": self.rule_id, "application_id": self.application_id,
+                "user_id": self.user_id, "recipient": self.recipient, "subject": self.subject,
+                "status": self.status, "detail": self.detail,
+                "created_at": self.created_at.isoformat()}
