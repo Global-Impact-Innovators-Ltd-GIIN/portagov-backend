@@ -51,8 +51,14 @@ class Config:
     SMS_FROM = os.getenv("SMS_FROM") or None
     SMS_UPDATES = os.getenv("SMS_UPDATES", "True").lower() == "true"  # also text status updates
     # email: one-time codes go to the user's email address as well as by SMS.
-    # The mailbox is portagov@giin.co.rw on the ServerByt control panel.
-    # Values are set in Render, never in code.
+    # Outbound mail goes through the Resend HTTPS API (free tier) when
+    # RESEND_API_KEY is set, because outbound SMTP from Render free to the
+    # StackMail mailbox times out. SMTP below stays as the fallback when no
+    # Resend key is configured. The sender is MAIL_FROM (portagov@giin.co.rw);
+    # Resend only sends from it once giin.co.rw is verified in Resend with
+    # the DNS records Resend shows for the domain. Values are set in Render,
+    # never in code.
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY") or None
     SMTP_HOST = os.getenv("SMTP_HOST") or None
     SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USER = os.getenv("SMTP_USER") or None
