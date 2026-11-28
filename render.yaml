@@ -27,6 +27,9 @@ services:
         value: "True" # demo only: codes are still shown on screen. Set False once every
         # account that signs in has an email or a working SMS route; the admin
         # account currently has no email, so flipping it now would lock him out.
+      - key: RESEND_API_KEY
+        sync: false   # Resend API key (free tier) for outbound mail; set in the Render dashboard only.
+        # When set, mail goes out through the Resend HTTPS API instead of SMTP.
       - key: SMTP_HOST
         sync: false   # mail server from the ServerByt panel, e.g. mail.giin.co.rw
       - key: SMTP_PORT
