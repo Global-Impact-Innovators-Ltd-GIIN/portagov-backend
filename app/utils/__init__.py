@@ -111,10 +111,12 @@ PASSWORD_CHANGE_ENDPOINTS = ("auth.me", "auth.change_password", "auth.logout_all
 
 
 def notify(user_id, title, body, channel="app"):
-    """Record a notification and text it: one-time codes always, status updates when SMS_UPDATES is on."""
+    """Record a notification and text it: one-time codes always, status updates when SMS_UPDATES is on.
+    An email notification never texts: the email is sent separately, and texting here as well sent
+    the one-time code by SMS twice to every account with an email address."""
     from ..services import sms
     db.session.add(Notification(user_id=user_id, title=title, body=body, channel=channel))
-    if channel == "sms" or current_app.config.get("SMS_UPDATES"):
+    if channel == "sms" or (channel == "app" and current_app.config.get("SMS_UPDATES")):
         u = db.session.get(User, user_id)
         if u and not u.disabled:
             sms.queue(u.phone, body if channel == "sms" else f"PortaGov: {title}. {body}")
