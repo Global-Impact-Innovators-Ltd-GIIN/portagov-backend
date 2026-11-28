@@ -22,7 +22,7 @@ services:
           name: portagov-db
           property: connectionString
       - key: CORS_ORIGINS
-        sync: false   # the Vercel frontend URL, e.g. https://portagov.giin.co.rw
+        sync: false   # Set in the Render dashboard to http://localhost:3000,https://portagov.giin.co.rw,https://portagov-frontend.vercel.app. The code default already lists these; a dashboard value wins when set.
       - key: EXPOSE_OTP
         value: "True" # demo only: codes are still shown on screen. Set False once every
         # account that signs in has an email or a working SMS route; the admin
