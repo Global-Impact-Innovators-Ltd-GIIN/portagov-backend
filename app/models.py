@@ -152,6 +152,7 @@ class Application(db.Model):
     updated_at = db.Column(db.DateTime, default=now, onupdate=now)
     due_at = db.Column(db.DateTime)
     bill_id = db.Column(db.String(20))  # pay-anywhere bill number (mobile money, bank, agent)
+    pickup_code = db.Column(db.String(12))  # six digit collection code, issued when the application is ready
     beneficiary = db.Column(JSONText)  # {"name","relation"} when applying on behalf of someone
     agent_id = db.Column(db.Integer, db.ForeignKey("user.id"))  # set when an agent assisted
     stage_index = db.Column(db.Integer, default=0)  # which of the institution's review stages it is at
@@ -176,6 +177,7 @@ class Application(db.Model):
             "service": {"id": self.service.id, "code": self.service.code, "name": self.service.name,
                         "institution": self.service.institution.name},
             "fee_usd": self.fee_usd, "paid": self.paid, "bill_id": self.bill_id,
+            "pickup_code": self.pickup_code,
             "beneficiary": self.beneficiary, "assisted": bool(self.agent_id), "delivery": self.delivery,
             "created_at": self.created_at.isoformat(), "updated_at": self.updated_at.isoformat(),
             "due_at": self.due_at.isoformat() if self.due_at else None,

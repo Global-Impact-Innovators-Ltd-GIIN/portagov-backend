@@ -1,3 +1,5 @@
+import secrets
+
 from flask import Blueprint, current_app, g, jsonify, request
 from sqlalchemy import func
 from werkzeug.security import generate_password_hash
@@ -46,6 +48,11 @@ def _get(app_id):
     release endpoints below."""
     return _scope(Application.query).filter(Application.id == app_id,
                                             Application.status != "held").first()
+
+
+def _new_pickup_code():
+    """Six digit collection code, issued when an application is ready."""
+    return f"{secrets.randbelow(900000) + 100000}"
 
 
 # ---- notifications (any user) ----
@@ -112,6 +119,11 @@ def action(app_id):
     wf = normalize_workflow(svc.workflow)
     i = min(a.stage_index or 0, len(wf) - 1)
     actors = list(a.stage_actors or [])
+    if act == "start_review" and a.status == "in_review":
+        # Repeating start review is a no-op success: the desk offers
+        # "In review" again on an application already in review, and a
+        # second officer may tap it too. Never reset stage progress here.
+        return jsonify(a.to_dict(full=True))
     if act == "start_review" and a.status == "submitted":
         a.assigned_to, a.stage_index, a.stage_actors = g.user.id, 0, []
         status, msg = "in_review", ("Officer started reviewing" if len(wf) == 1
@@ -157,7 +169,9 @@ def action(app_id):
         a.decision_note = note
         status, msg = "rejected", note
     elif act == "ready" and a.status == "approved":
-        status, msg = "ready_for_collection", note or "Ready for delivery / collection"
+        if not a.pickup_code:
+            a.pickup_code = _new_pickup_code()
+        status, msg = "ready_for_collection", (note or "Ready for delivery / collection") + f". Pickup code {a.pickup_code}."
     elif act == "complete" and a.status == "ready_for_collection":
         status, msg = "completed", "Delivered to applicant"
     else:
@@ -377,3 +391,4 @@ def create_officer():
     audit(f"admin_create_{role}", phone)
     db.session.commit()
     return jsonify(u.to_dict()), 201
+
