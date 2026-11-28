@@ -62,10 +62,10 @@ def upload_all(c, tok, aid):
 def _submitted(c, tok, adm, service="TIN_REG"):
     """A paid and released application, visible in the staff queue as submitted."""
     a = c.post("/api/applications", headers=hdr(tok), json={"service_code": service}).get_json()
-    c.put(f"/api/applications/{a[id]}", headers=hdr(tok),
+    c.put(f"/api/applications/{a["id"]}", headers=hdr(tok),
           json={"data": {"full_name": "Ma Test", "nin": "LR12345678"}})
     upload_all(c, tok, a["id"])
-    r = c.post(f"/api/applications/{a[id]}/submit", headers=hdr(tok))
+    r = c.post(f"/api/applications/{a["id"]}/submit", headers=hdr(tok))
     assert r.status_code == 200, r.get_json()
     rows = c.get("/api/staff/applications", headers=hdr(adm)).get_json()
     mine = [x for x in rows if x["id"] == a["id"]]
@@ -98,7 +98,7 @@ def test_ready_issues_pickup_code(client):
     assert r.status_code == 200
     code = r.get_json()["pickup_code"]
     assert code and len(code) == 6 and code.isdigit()
-    mine = client.get(f"/api/applications/{a[id]}", headers=hdr(tok)).get_json()
+    mine = client.get(f"/api/applications/{a["id"]}", headers=hdr(tok)).get_json()
     assert mine["status"] == "ready_for_collection"
     assert mine["pickup_code"] == code
     notes = client.get("/api/notifications", headers=hdr(tok)).get_json()
